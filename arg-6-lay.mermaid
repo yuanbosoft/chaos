@@ -1,0 +1,34 @@
+%%{init: {'theme': 'neutral', 'themeVariables': { 'primaryColor': '#fff'}}}%%
+graph TB
+    classDef appLayer fill:#FFE4C4,stroke:#333;
+    classDef contractLayer fill:#DDA0DD,stroke:#333;
+    classDef incentiveLayer fill:#AFEEEE,stroke:#333;
+    classDef consensusLayer fill:#98FB98,stroke:#333;
+    classDef networkLayer fill:#FFB6C1,stroke:#333;
+    classDef dataLayer fill:#D3D3D3,stroke:#333;
+
+    subgraph 区块链六层架构
+        direction TB
+        
+        应用层[[应用层]]:::appLayer
+        合约层[[合约层]]:::contractLayer
+
+        激励层[[激励层]]:::incentiveLayer
+        共识层[[共识层]]:::consensusLayer
+
+        网络层[[网络层]]:::networkLayer
+        数据层[[数据层]]:::dataLayer
+
+        %% 主数据流
+        应用层 --> 合约层
+        合约层 --> 激励层
+        激励层 --> 网络层
+        网络层 --> 数据层
+
+        %% 并行路径
+        合约层 --> 共识层
+        共识层 --> 网络层
+
+        %% 反馈路径
+        数据层 -.-> 合约层
+    end
