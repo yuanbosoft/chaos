@@ -1,0 +1,139 @@
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+import hashlib
+
+# ========================= 中文字体配置 =========================
+plt.rcParams['font.sans-serif'] = ['SimHei']  # Windows系统字体
+plt.rcParams['axes.unicode_minus'] = False   # 解决负号显示问题
+plt.rcParams['font.size'] = 9                # 全局字体大小
+plt.rcParams['axes.titlesize'] = 11          # 标题字体大小
+plt.rcParams['axes.labelsize'] = 10          # 坐标轴标签大小
+
+# ========================= 系统参数配置 =========================
+σ, α = 10, 0.1     # x维度参数
+ρ, β = 28, 8/3      # y维度参数
+γ, δ, ε = 0.1, 10, 0.1  # z/w维度参数
+τ = 1.0             # 时间模数
+nonce = b'\x12\x34'  # 加密Nonce值
+
+# ========================= 哈希函数定义 =========================
+def hash_to_float(data, bits=32):
+    """将哈希值转换为[-1,1]区间的浮点数"""
+    h = hashlib.shake_256(data).digest(bits//8)
+    return int.from_bytes(h, 'big') / (1 << bits) * 2 - 1
+
+def hash_x(t):
+    """x维度哈希扰动"""
+    e_t = int(t * 1000).to_bytes(4, 'big')
+    input_data = bytes([a ^ b for a, b in zip(e_t, nonce)])
+    return hashlib.sha256(input_data).digest()
+
+def hash_y(w):
+    """y维度哈希扰动"""
+    return hashlib.sha256(np.float64(w).tobytes()).digest()
+
+def hash_z(t):
+    """z维度哈希扰动"""
+    t_mod = int(t % τ).to_bytes(4, 'big')
+    return hashlib.shake_256(t_mod).digest(32)
+
+def hash_w(x, y, z):
+    """w维度哈希扰动"""
+    xyz_bytes = b''.join([np.float64(v).tobytes() for v in [x, y, z]])
+    return hashlib.sha3_256(xyz_bytes).digest()
+
+# ========================= 微分方程定义 =========================
+def chaos_system(t, state):
+    """四维混沌系统微分方程"""
+    x, y, z, w = state
+    
+    # 计算各维度哈希扰动
+    h_x = hash_to_float(hash_x(t))
+    h_y = hash_to_float(hash_y(w))
+    h_z = hash_to_float(hash_z(t))
+    h_w = hash_to_float(hash_w(x, y, z))
+    
+    # 微分方程组
+    return [
+        σ*(y - x) + α * h_x,         # dx/dt
+        x*(ρ - z) - y + β * h_y,      # dy/dt
+        x*y - β*z + γ * h_z,          # dz/dt
+        -δ*w + ε * h_w                # dw/dt
+    ]
+
+# ========================= 数值求解 =========================
+# 初始条件和时间设置
+initial = [1.0, 1.0, 1.0, 0.1]
+t_span = (0, 30)  # 缩短时间跨度提升稳定性
+t_eval = np.linspace(*t_span, 5000)  # 减少计算点数
+
+# 使用高稳定性求解器
+sol = solve_ivp(
+    chaos_system,
+    t_span,
+    initial,
+    t_eval=t_eval,
+    method='Radau',    # 隐式方法增强稳定性
+    max_step=0.1,      # 限制最大步长
+    rtol=1e-6,
+    atol=1e-8
+)
+
+# ========================= 可视化输出 =========================
+fig = plt.figure(figsize=(10, 12), dpi=150)  # 紧凑布局
+fig.subplots_adjust(hspace=0.35, wspace=0.25)  # 子图间距调整
+
+# ------------------------- (a) 三维相空间图 -------------------------
+ax1 = fig.add_subplot(321, projection='3d')
+ax1.plot(sol.y[0], sol.y[1], sol.y[2], lw=0.4, alpha=0.7)
+ax1.text2D(0.05, 0.93, '(a)', transform=ax1.transAxes, 
+          fontsize=11, weight='bold', color='navy')
+ax1.set_title("三维相空间轨迹（x-y-z）", pad=8)
+ax1.set_xlabel("X轴", labelpad=8)
+ax1.set_ylabel("Y轴", labelpad=8)
+ax1.set_zlabel("Z轴", labelpad=8)
+ax1.tick_params(axis='both', which='major', labelsize=8)
+
+# ------------------------- (b)-(e) 时间序列图 -------------------------
+labels = ['(b)', '(c)', '(d)', '(e)']
+titles = ['x时间演化', 'y时间演化', 'z时间演化', 'w时间演化']
+colors = ['#E74C3C', '#3498DB', '#2ECC71', '#9B59B6']
+
+for i in range(4):
+    ax = fig.add_subplot(322 + i)
+    ax.plot(sol.t, sol.y[i], color=colors[i], lw=0.8)
+    ax.text(0.03, 0.90, labels[i], transform=ax.transAxes,
+           fontsize=10, weight='bold', color='navy')
+    ax.set_title(titles[i], pad=6)
+    ax.set_xlabel("时间 (t)", fontsize=9)
+    ax.set_ylabel("数值", fontsize=9)
+    ax.tick_params(axis='both', labelsize=8)
+    ax.grid(alpha=0.15)
+
+# ------------------------- (f)-(g) 分布直方图 -------------------------
+hist_params = {
+    'bins': 80,
+    'density': True,
+    'histtype': 'stepfilled',
+    'edgecolor': 'black',
+    'alpha': 0.75
+}
+
+ax5 = fig.add_subplot(325)
+ax5.hist(sol.y[0], **hist_params, color='#E67E22')
+ax5.text(0.03, 0.90, '(f)', transform=ax5.transAxes,
+        fontsize=10, weight='bold', color='navy')
+ax5.set_title("x值概率分布", pad=8)
+ax5.set_xlabel("数值区间", fontsize=9)
+ax5.set_ylabel("概率密度", fontsize=9)
+
+ax6 = fig.add_subplot(326)
+ax6.hist(sol.y[3], **hist_params, color='#8E44AD')
+ax6.text(0.03, 0.90, '(g)', transform=ax6.transAxes,
+        fontsize=10, weight='bold', color='navy')
+ax6.set_title("w值概率分布", pad=8)
+ax6.set_xlabel("数值区间", fontsize=9)
+
+plt.savefig('混沌系统可视化.png', bbox_inches='tight', dpi=200)
+plt.show()
